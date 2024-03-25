@@ -1,0 +1,144 @@
+library(randomForest)  # for fitting random forests
+library(pdp)           # for partial dependence plots
+library(vip) 
+memory.limit(100000)
+
+# randomly select data for testing and validation
+set.seed(100)
+train <- sample(nrow(datjan), 0.7*nrow(datjan), replace = FALSE)
+TrainSet <- datjul[train,]
+ValidSet <- datjul[-train,]
+
+# create a random forest model
+mjanrf <- randomForest(sif ~ ., data = datjan, ntree=60, importance = TRUE)
+
+# check model performance
+hist(treesize(mjanrf),
+     main = "No. of Nodes for the Trees",
+     col = "green")
+MDSplot(mjanrf)
+plot(mjanrf)
+
+########### check varibale importance & test over independent validation data
+ValidSet[,"eco"] = as.factor(ValidSet[,"eco"])
+prf <- predict(mjanrf_train, ValidSet, method="response")
+plot(prf, ValidSet$sif)
+summary(lm(prf~ ValidSet$sif))
+library(varImp)
+mjanrf_train$importance/mjanrf_train$importanceSD
+varImpPlot(mjanrf_train,
+           sort = T,
+           main = "Variable Importance")
+########### check the correlation between observed Chl, preidcted SIF, MODIS Chl and NFLH
+#########################################################################
+library(ggplot2)
+ch_ob <- read.csv("E:\\ocean_project\\obs_chlor_data2.csv",header=T)
+
+lm_eqn1 <- function(gpp1){
+  m <- lm(SIF~ Tot_Chl_a, ch_ob);
+  eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(R)^2~"="~r2, 
+                   list(a = format(unname(coef(m)[1]), digits = 1),
+                        b = format(unname(coef(m)[2]), digits = 1),
+                        r2 = format(summary(m)$r.squared, digits = 2)))
+  as.character(as.expression(eq));
+}
+
+
+
+psif <- ggplot(ch_ob, aes(x=Tot_Chl_a, y=SIF))+geom_point(aes(color=factor(Month)),size=3 )  +
+  ylim(0,0.2)+xlim(0,1.6)+ ylab(expression("SIF (mW"*" m"^-2*" sr"^-1*" nm"^-1*")"))+xlab(expression("Observed Chl_a (mg"*" m"^-3*")"))+
+  scale_color_manual(name = "Month",values = c("#EDF8B1", "#C7E9B4" ,"#7FCDBB" ,"#41B6C4" ,"#1D91C0","#5E4FA2","darkorchid4"))+theme(legend.position="top") + theme_classic()+ theme(legend.position="top", legend.box="vertical", legend.margin=margin())+
+  stat_smooth(method = "lm", formula = y ~ x, geom = "smooth", col="gray40")+ geom_text(size=3,x = 0.5, y = 0.2, col="gray40",label = lm_eqn1(gpp1), parse = TRUE)
+
+
+lm_eqn1 <- function(gpp1){
+  m <- lm(Chlor_a~ Tot_Chl_a, ch_ob);
+  eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(R)^2~"="~r2, 
+                   list(a = format(unname(coef(m)[1]), digits = 1),
+                        b = format(unname(coef(m)[2]), digits = 1),
+                        r2 = format(summary(m)$r.squared, digits = 2)))
+  as.character(as.expression(eq));
+}
+
+
+pchl <- ggplot(ch_ob, aes(x=Tot_Chl_a, y=Chlor_a))+geom_point(aes(color=factor(Month)),size=3 )  +
+  ylim(0,1.5)+xlim(0,1.6)+ ylab(expression("MODIS Chl_a (mg"*" m"^-3*")"))+xlab(expression("Observed Chl_a (mg"*" m"^-3*")"))+
+  scale_color_manual(name = "Month",values = c("#EDF8B1", "#C7E9B4" ,"#7FCDBB" ,"#41B6C4" ,"#1D91C0","#5E4FA2","darkorchid4"))+theme(legend.position="top") + theme_classic()+ theme(legend.position="top", legend.box="vertical", legend.margin=margin())+
+  stat_smooth(method = "lm", formula = y ~ x, geom = "smooth", col="gray40")+ geom_text(size=3,x = 0.5, y = 1.5,col="gray40", label = lm_eqn1(gpp1), parse = TRUE)
+
+
+
+lm_eqn1 <- function(gpp1){
+  m <- lm(NFLH~ Tot_Chl_a, ch_ob);
+  eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(R)^2~"="~r2, 
+                   list(a = format(unname(coef(m)[1]), digits = 1),
+                        b = format(unname(coef(m)[2]), digits = 1),
+                        r2 = format(summary(m)$r.squared, digits = 2)))
+  as.character(as.expression(eq));
+}
+
+
+pnfl <- ggplot(ch_ob, aes(x=Tot_Chl_a, y=NFLH))+geom_point(aes(color=factor(Month)),size=3 )  +
+  ylim(-0.1,0.2)+xlim(0,1.6)+ ylab(expression("NFLH (mW"*" cm"^-2*" mu sr"^-1*" m"^-1*")"))+xlab(expression("Observed Chl_a (mg"*" m"^-3*")"))+
+  scale_color_manual(name = "Month",values = c("#EDF8B1", "#C7E9B4" ,"#7FCDBB" ,"#41B6C4" ,"#1D91C0","#5E4FA2","darkorchid4"))+theme(legend.position="top") + theme_classic()+ theme(legend.position="top", legend.box="vertical", legend.margin=margin())+
+  stat_smooth(method = "lm", formula = y ~ x, geom = "smooth", col="gray40")+ geom_text(size=3,x = 0.5, y = 0.2,col="gray40", label = lm_eqn1(gpp1), parse = TRUE)
+
+
+tiff(file="ocean\\obs_scatter3c.tif",
+     width=9, height=3, units="in", res=600,pointsize = 10)
+
+grid.arrange(psif, pchl, pnfl, nrow=1)
+
+dev.off()
+###################################################################### plot regional anomalies in predicted SIF
+library(rasterVis)
+
+setwd("E:\\ocean_project\\SIF_predict\\polar4_eco")
+presif <-list.files(path=".", pattern="SIF.*.tif", all.files=FALSE, full.names=TRUE)
+presif <- mixedsort(presif)
+presif04_20 <- stack(presif)
+hist(presif04_20[[7]])
+# normalize the data
+presif04_20 <-(presif04_20  - minValue(presif04_20))/ (maxValue(presif04_20)- minValue(presif04_20))
+
+
+presif4 <- stack(presif04_20 [[1:44]])
+presif8 <- stack(presif04_20 [[45:88]])
+presif13 <- stack(presif04_20 [[89:132]])
+presif17 <- stack(presif04_20 [[133:187]])
+
+presifapr_sep4 <- mean(presif4[[c(5:9,16:20,27:31,38:42) ]], na.rm=T)
+presifapr_sep8 <- mean(presif8[[c(5:9,16:20,27:31,38:42) ]], na.rm=T)
+presifapr_sep13 <- mean(presif13[[c(5:9,16:20,27:31,38:42) ]], na.rm=T)
+presifapr_sep17 <- mean(presif17[[c(5:9,16:20,27:31,38:42,49:53)]], na.rm=T)
+
+presifapr_sepav <- mean(presifapr_sep4, presifapr_sep8, presifapr_sep13, presifapr_sep17, na.rm=T)
+
+spresif <-  stack(presifapr_sep4 - presifapr_sepav, presifapr_sep8 - presifapr_sepav, presifapr_sep13 -  presifapr_sepav, presifapr_sep17 -  presifapr_sepav) 
+
+# create legend
+myLab<- paste(c( "-0.2","-0.1", "0","0.1", "0.2"))
+labelat1 =c(-0.2,-0.1,   0 ,0.1 ,0.2)
+labelat <- seq(-0.2,0.2, by=0.001) 
+
+hist(s)
+# resample to polar a view projection:
+spresifre <- projectRaster(spresif , crs=CRS("+init=epsg:5936"))
+
+pspresif <-levelplot(spresifre,layout=c(2,2),margin=FALSE,maxpixels=1e6,scales=list(draw=FALSE), interpolate=TRUE, col.regions=colorRampPalette(c("#9E0142","#D53E4F","#F46D43", "#FDAE61" ,"#FEE08B","white","#ABDDA4","#66C2A5","#3288BD","#5E4FA2","darkorchid4")),colorkey=(key=list(width=0.6,space="bottom",at=labelat,labels=list(cex=0.7,at=labelat1,labels=myLab),cex=0.7)),
+                sub = list(expression("SIF anomaly"),cex=0.7, font=2),pretty = T,par.settings=list(axis.line=list(col="white"), strip.background=list(col="white"),panel.background=list(col="white")),par.strip.text=list(cex=0.7),ylab="",xlab="",names.attr=c("2004-2007","2008-2011", "2012-2015", "2016-2020"))+layer(sp.polygons(continents_abv , lwd=0.2, col='gray70'))
+
+tiff(file="G:\\My Drive\\working papers\\jpl\\ocean\\ocean_presif_anom_polar5.jpeg",
+     width=5.5, height=4.5, units="in", res=300,pointsize = 10)
+pspresif
+dev.off()
+
+
+
+
+
+
+
+
+
+
